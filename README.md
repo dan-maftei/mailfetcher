@@ -33,3 +33,4 @@ worker.disconnect()
 | `unzip`        | `True`       | Extract (unzip) automatically after download                                        |
 | `keep_archive` | `True`       | Keep the zip after extracting, delete otherwise                                     |
 
+
