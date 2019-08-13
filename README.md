@@ -4,6 +4,13 @@ mailfetcher is a Python 3 wrapper against [transferwee](https://github.com/iamle
 to download (and optionally extract) zip archives received via [wetransfer](https://wetransfer.com). 
 Download links for the files being received are extracted from the e-mail messages received upon transfer
 
+## Requirements
+
+Apart from standard python3 libraries, the script requires
+ * BeautifulSoup ([bs4](https://pypi.org/project/beautifulsoup4/))
+ * requests
+ * [transferwee](https://github.com/iamleot/transferwee)
+ 
 ## Usage
 
 The entire code is wrapped in a class that is instantiated by passing various options as argument in a dictionary:
