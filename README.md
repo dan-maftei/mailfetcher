@@ -8,14 +8,16 @@ Download links for the files being received are extracted from the e-mail messag
 
 The entire code is wrapped in a class that is instantiated by passing various options as argument in a dictionary:
 
-% from mailfetcher import MailFetcher 
-% worker = MailFetcher({            
-%     'server': 'mail.example.com',
-%     'user': 'john.doe',         
-%     'pass': 'SuperStr0ngPass', 
-%     'outdir': '/store/zipfiles/'
-% })                              
-% worker.fetch()                 
-% worker.disconnect()           
+```python
+from mailfetcher import MailFetcher 
+worker = MailFetcher({            
+    'server': 'mail.example.com',
+    'user': 'john.doe',         
+    'pass': 'SuperStr0ngPass', 
+    'outdir': '/store/zipfiles/'
+})                              
+worker.fetch()                 
+worker.disconnect()           
+```
 
 
