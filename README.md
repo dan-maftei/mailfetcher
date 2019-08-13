@@ -24,12 +24,12 @@ worker.disconnect()
 
 | Key            | Default value          | Meaning                                                                             |
 |----------------|------------------------|-------------------------------------------------------------------------------------|
-| `server`       | None, write down yours | IMAP server address (hostname or IP number)                                         |
+| `server`       | None, write down yours | IMAP server address (hostname or IP number). Should use SSL (port 993)                                         |
 | `user`         | None, write down yours | IMAP account username                                                               |
 | `pass`         | None, write down yours | IMAP account password                                                               |
 | `mailbox`      | `'inbox'`              | IMAP folder to search for UNREAD messages                                           |
 | `outdir`       | `'/tmp/zipfiles'`      | Output folder (will download and extract archives here)                             |
-| `autostart`    | `False`{:.python}      | Start fetching after instantiation, no need to call `MailFetcher.fetch()`{:.python} |
-| `unzip`        | `True`{:.python}       | Extract (unzip) automatically after download                                        |
-| `keep_archive` | `True`{:.python}       | Keep the zip after extracting, delete otherwise                                     |
+| `autostart`    | `False`      | Start fetching after instantiation, no need to call `MailFetcher.fetch()` |
+| `unzip`        | `True`       | Extract (unzip) automatically after download                                        |
+| `keep_archive` | `True`       | Keep the zip after extracting, delete otherwise                                     |
 
