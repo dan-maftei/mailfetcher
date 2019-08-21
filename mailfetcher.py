@@ -2,17 +2,17 @@
 #
 # Copyright (c) 2019 Dan Maftei <dan.maftei@gmail.com>
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
 # are met:
-# 
+#
 # 1. Redistributions of source code must retain the above copyright
 #    notice, this list of conditions and the following disclaimer.
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
 # TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -28,12 +28,13 @@
 
 """
 A. MailFetcher does the following, in order:
-      1. parse mailbox messages from WeTransfer 
+      1. parse mailbox messages from WeTransfer
       2. extract links to files sent via WeTransfer
       3. download files in a predefined folder
       4. unzip archives in place (if requested)
       5. delete extracted archives (if requested)
 
+    *** It is ASSUMED that the IMAP server uses SSL ***
 
 B. Requires python >= 3.6 and the following packages:
       requests
@@ -68,6 +69,7 @@ import zipfile
 import transferwee
 import bs4
 
+# Default configuation
 defaults = {
     'mailbox': 'inbox',
     'autostart': False,
@@ -77,23 +79,32 @@ defaults = {
 }
 
 class MailFetcher(object):
-    
-    """ Config from arguments """
+
     def __init__(self, config=None):
+        """
+        Config from default dictionary, then update from arguments
+
+        :param dict config: configuration options
+        """
         self.config = defaults
         self.config.update(config)
 
-        self.mailbox = None
         self.is_connected = self.connect()
-        if self.config.get('autostart'):
-            self.fetch()            
+
+        if self.config.get('autostart', False):
+            self.fetch()
+
 
     def connect(self):
-        """ Connect to IMAP and log in """
+        """
+        Connect to IMAP and log in
+
+        :return: True/False
+        """
         server = self.config.get('server', None)
         username = self.config.get('user', None)
         password = self.config.get('pass', None)
-        if server is None:
+        if server is None or username is None or password is None:
             return False
 
         self.mailbox = imaplib.IMAP4_SSL(server)
@@ -101,71 +112,40 @@ class MailFetcher(object):
             return False
         try:
             self.ts()
-            print("Conectare la server...", end="")
-            rv, data = self.mailbox.login(username, password)
+            print("Connecting ...", end="")
+            result, data = self.mailbox.login(username, password)
         except imaplib.IMAP4.error as e:
             print("Failed: " + str(e))
             return False
         print("OK")
+
         return True
 
-    def fetch(self):
-        """ Fetch unread messages """
-        if not self.is_connected:
-            print("Error, not connected to IMAP server!")
-            return None
-        self.mailbox.select(self.config.get('mailbox'))
-        tmp, data = self.mailbox.search(None, '(UNSEEN)')
-        for num in data[0].split():
-            tmp, data = self.mailbox.fetch(num, '(RFC822)')
-            msg = email.message_from_bytes(data[0][1])
-            links = self.get_wetransfer_links(msg)
-            self.download_archives(links)
 
-    def download_archives(self, links):
-        # Download a list of files from the corresponding links
-        os.makedirs(self.config.get('outdir'), exist_ok=True)
-        os.chdir(self.config.get('outdir'))
-        self.ts()
-        print("Am gasit {} legaturi de download:".format(len(links)))
-        for link in links:
-            if "https://wetransfer.com/downloads" in link:
-                self.log("Descarc de la {}.".format(link))
-                file_name = transferwee.download(link)
-                full_path = os.path.join(self.config.get('outdir'), file_name)
-                if os.path.isfile(full_path):
-                    size = os.path.getsize(full_path)
-                    self.ts()
-                    print("{:.<50s}{:5.1f} MB".format(file_name, size / 1024 / 1024))
-                    if self.config.get('unzip'):
-                        self.unzip_archive(file_name)
+    def get_wetransfer_links(self, message):
+        """
+        Parse WeTransfer message and extract download link(s)
 
-    def unzip_archive(self, file_name):
-        # Unzip archive in 'outdir':
-        with zipfile.ZipFile(file_name, 'r') as zipf:
-            zipf.extractall(self.config.get('outdir'))
-            self.log("{} extracted.".format(file_name))
-            if not self.config.get('keep_archive'):
-                os.unlink(file_name)
-                self.log("{} deleted.".format(file_name))
-            
-
-    def get_wetransfer_links(self, msg):
-        # Parse WeTransfer message and extract download link(s)
-        # argument msg = message to be parsed
-        body = ""
-        if msg.is_multipart():
-            for part in msg.walk():
-                ctype = part.get_content_type()
-                cdispo = str(part.get('Content-Disposition'))
-                # skip any text/plain (txt) attachments
-                if ctype == 'text/html' and 'attachment' not in cdispo:
-                    body = part.get_payload(decode=True)  # decode
+        :param message: message to be parsed, returned by email.message_from_bytes()
+        :return: links found in message's body
+        :rtype: list
+        """
+        if message.is_multipart():
+            for part in message.walk():
+                content_type = part.get_content_type()
+                if content_type == 'text/html':
+                    body = part.get_payload(decode=True)
                     break
         else:
-            body = msg.get_payload(decode=True)
+            body = message.get_payload(decode=True)
 
-        # Parse body
+        if body is None:
+            self.log("Unable to parse message!")
+            return []
+
+        # Parse body using BeautifulSoup to search download links
+        # Uses a set(), as download links may be found several
+        # times in message body
         links = set()
         soup =  bs4.BeautifulSoup(body, 'html.parser')
         for link in soup.find_all('span', class_="download_link_link"):
@@ -173,9 +153,84 @@ class MailFetcher(object):
         for link in soup.find_all('a', class_="download_link_link", href=True):
             links.add(link['href'])
 
+        self.log("Found {} links to download:".format(len(links)))
         return list(links)
 
+    def download_archives(self, links):
+        """
+        Download a list of files from the corresponding links
 
+        :param list links: list of download links
+        """
+
+        # Create outdir and chdir to it
+        os.makedirs(self.config.get('outdir'), exist_ok=True)
+        os.chdir(self.config.get('outdir'))
+
+        for link in links:
+            if "https://wetransfer.com/downloads" in link:
+                self.ts()
+                print("Downloading from {}....".format(link), end="")
+                file_name = transferwee.download(link)
+                full_path = os.path.join(self.config.get('outdir'), file_name)
+                if os.path.isfile(full_path):
+                    size = os.path.getsize(full_path)
+                    print("{:.<50s}{:5.1f} MB".format(file_name, size / 1024 / 1024))
+                    if self.config.get('unzip'):
+                        self.unzip_archive(file_name)
+                else:
+                    print("Failed!")
+
+
+    def unzip_archive(self, file_name):
+        """
+        Extract an archive in 'outdir'
+
+        :param file_name: archive file_name (full/relative path)
+
+        """
+        with zipfile.ZipFile(file_name, 'r') as zipf:
+            zipf.extractall(self.config.get('outdir'))
+            self.log("{} extracted.".format(file_name))
+
+            # Delete source archive if configured so
+            if not self.config.get('keep_archive'):
+                try:
+                    os.unlink(file_name)
+                    self.log("{} deleted.".format(file_name))
+                except Exception as e:
+                    self.log("Unable to delete {}: {}.".format(file_name, str(e)))
+
+
+    def fetch(self):
+        """
+        Fetch unread messages, parse email body for
+        download links and download archives
+        """
+        if not self.is_connected:
+            print("Error, not connected to IMAP server!")
+            return None
+
+        self.mailbox.select(self.config.get('mailbox'))
+
+        # Search only unread messages
+        result, data = self.mailbox.search(None, '(UNSEEN)')
+
+        # Iterate over email found
+        for mailID in data[0].split():
+            result, data = self.mailbox.fetch(mailID, '(RFC822)')
+            message = email.message_from_bytes(data[0][1])
+            links = self.get_wetransfer_links(message)
+            self.download_archives(links)
+
+
+    def disconnect(self):
+        # Disconnect from mailserver
+        if self.is_connected:
+            self.mailbox.close()
+            self.log("Disconnected from {}.".format(self.config.get('server', 'IMAP server')))
+
+    # Utility methods
     def ts(self):
         # Timestamp output
         print("[{:%Y-%m-%d %H:%M:%S}] ".format(datetime.datetime.now()), end="")
@@ -187,10 +242,6 @@ class MailFetcher(object):
         print(msg)
 
 
-    def disconnect(self):
-        # Disconnect from mailserver
-        if self.is_connected:            
-            self.mailbox.close()
-            self.log("Deconectat de la serverul de IMAP.")
+
 
 
