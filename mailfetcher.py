@@ -62,7 +62,6 @@ C. Usage in a python script:
 import os
 import imaplib
 import email
-import shutil
 import datetime
 import zipfile
 
