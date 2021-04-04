@@ -60,6 +60,7 @@ C. Usage in a python script:
 
 
 import os
+import urllib
 import imaplib
 import email
 import datetime
@@ -76,6 +77,18 @@ defaults = {
     'keep_archive': True,
     'outdir': '/tmp/zipfiles'
 }
+
+
+def _unquoted_filename(we_url):
+    """ 
+    Retrieve filename from WeTransfer link 
+    (code duplicates the private function from 
+    transferwee)
+    """
+    url = transferwee.download_url(we_url)
+    name = urllib.parse.urlparse(url).path.split('/')[-1]
+    return urllib.parse.unquote(name).replace('../', '').replace('/', '').replace('\\', '')
+
 
 class MailFetcher(object):
 
@@ -103,20 +116,20 @@ class MailFetcher(object):
         server = self.config.get('server', None)
         username = self.config.get('user', None)
         password = self.config.get('pass', None)
+
         if server is None or username is None or password is None:
             return False
 
         self.mailbox = imaplib.IMAP4_SSL(server)
         if username is None or password is None:
             return False
+
         try:
-            self.ts()
-            print("Connecting ...", end="")
             result, data = self.mailbox.login(username, password)
+            self._log(f"Logged in on {server} as {username}.")
         except imaplib.IMAP4.error as e:
-            print("Failed: " + str(e))
+            self._log(f"Login failed: {e}.")
             return False
-        print("OK")
 
         return True
 
@@ -139,7 +152,7 @@ class MailFetcher(object):
             body = message.get_payload(decode=True)
 
         if body is None:
-            self.log("Unable to parse message!")
+            self._log("Unable to parse message!")
             return []
 
         # Parse body using BeautifulSoup to search download links
@@ -152,7 +165,7 @@ class MailFetcher(object):
         for link in soup.find_all('a', class_="download_link_link", href=True):
             links.add(link['href'])
 
-        self.log("Found {} links to download:".format(len(links)))
+        self._log("Found {} links to download.".format(len(links)))
         return list(links)
 
     def download_archives(self, links):
@@ -167,14 +180,16 @@ class MailFetcher(object):
         os.chdir(self.config.get('outdir'))
 
         for link in links:
-            if "https://wetransfer.com/downloads" in link:
-                self.ts()
-                print("Downloading from {}....".format(link), end="")
-                file_name = transferwee.download(link)
+            if "wetransfer.com/downloads" in link:
+                file_name = _unquoted_filename(link)
+                self._log(f"Downloading {file_name}.")
+                
+                transferwee.download(link)
+                
                 full_path = os.path.join(self.config.get('outdir'), file_name)
                 if os.path.isfile(full_path):
                     size = os.path.getsize(full_path)
-                    print("{:.<50s}{:5.1f} MB".format(file_name, size / 1024 / 1024))
+                    print(f"{file_name:.<50s}{size/1024/1024:5.1f} MB")
                     if self.config.get('unzip'):
                         self.unzip_archive(file_name)
                 else:
@@ -190,15 +205,15 @@ class MailFetcher(object):
         """
         with zipfile.ZipFile(file_name, 'r') as zipf:
             zipf.extractall(self.config.get('outdir'))
-            self.log("{} extracted.".format(file_name))
+            self._log("{} extracted.".format(file_name))
 
             # Delete source archive if configured so
             if not self.config.get('keep_archive'):
                 try:
                     os.unlink(file_name)
-                    self.log("{} deleted.".format(file_name))
+                    self._log("{} deleted.".format(file_name))
                 except Exception as e:
-                    self.log("Unable to delete {}: {}.".format(file_name, str(e)))
+                    self._log("Unable to delete {}: {}.".format(file_name, str(e)))
 
 
     def fetch(self):
@@ -224,23 +239,19 @@ class MailFetcher(object):
 
 
     def disconnect(self):
-        # Disconnect from mailserver
+        """ Disconnect from mailserver """
         if self.is_connected:
             self.mailbox.close()
-            self.log("Disconnected from {}.".format(self.config.get('server', 'IMAP server')))
+            self._log("Disconnected from {}.".format(self.config.get('server', 'IMAP server')))
 
-    # Utility methods
-    def ts(self):
-        # Timestamp output
+    # Private utility methods
+    def _ts(self):
+        """ Timestamp output """
         print("[{:%Y-%m-%d %H:%M:%S}] ".format(datetime.datetime.now()), end="")
 
 
-    def log(self, msg):
-        # Log a message with timestamp
-        self.ts()
+    def _log(self, msg):
+        """ Log a message with timestamp """
+        self._ts()
         print(msg)
-
-
-
-
 
